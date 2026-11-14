@@ -1,0 +1,213 @@
+-- โหลด Rayfield UI Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "MM2 สคริปต์ภาษาไทย 🔪👮‍♂️",
+   LoadingTitle = "กำลังโหลดสคริปต์ MM2...",
+   LoadingSubtitle = "โดย AI Assistant",
+   ConfigurationSaving = { Enabled = false },
+   Discord = { Enabled = false },
+   KeySystem = false
+})
+
+-- ตัวแปรระบบ
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+
+local LockTargetEnabled = false
+local ESPEnabled = false
+local BringPlayersLoop = false
+
+-- ฟังก์ชันระบุบทบาทและชื่อภาษาไทย
+local function GetRoleInfo(player)
+    local roleName = "คนธรรมดา"
+    local color = Color3.fromRGB(0, 255, 0) -- สีเขียว
+    
+    -- เช็คจากกระเป๋าหรือโมเดลตัวละคร
+    local backpack = player:FindFirstChild("Backpack")
+    local character = player.Character
+    
+    local hasGun = (backpack and backpack:FindFirstChild("Gun")) or (character and character:FindFirstChild("Gun"))
+    local hasKnife = (backpack and backpack:FindFirstChild("Knife")) or (character and character:FindFirstChild("Knife"))
+    
+    if hasKnife then
+        roleName = "ไอชั่ว"
+        color = Color3.fromRGB(255, 0, 0) -- สีแดง
+    elseif hasGun then
+        roleName = "ตำรวจ"
+        color = Color3.fromRGB(0, 0, 255) -- สีน้ำเงิน
+    end
+    
+    return roleName, color
+end
+
+-- ระบบ ESP กรอบสี่เหลี่ยมและชื่อบทบาท
+local espBoxes = {}
+
+local function CreateESP(player)
+    if player == LocalPlayer then return end
+    
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Filled = false
+    box.Transparent = 1
+    box.Visible = false
+    
+    local text = Drawing.new("Text")
+    text.Size = 16
+    text.Center = true
+    text.Outline = true
+    text.Visible = false
+    
+    espBoxes[player] = {Box = box, Text = text}
+end
+
+for _, p in pairs(Players:GetPlayers()) do CreateESP(p) end
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(function(p)
+    if espBoxes[p] then
+        espBoxes[p].Box:Remove()
+        espBoxes[p].Text:Remove()
+        espBoxes[p] = nil
+    end
+end)
+
+-- อัปเดต ESP ลูป
+RunService.RenderStepped:Connect(function()
+    for player, drawings in pairs(espBoxes) do
+        if ESPEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local hrp = player.Character.HumanoidRootPart
+            local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            
+            if onScreen then
+                local roleName, roleColor = GetRoleInfo(player)
+                
+                -- คำนวณขนาดกรอบ
+                local scale = 1000 / pos.Z
+                drawings.Box.Size = Vector2.new(20 * scale / 10, 35 * scale / 10)
+                drawings.Box.Position = Vector2.new(pos.X - drawings.Box.Size.X / 2, pos.Y - drawings.Box.Size.Y / 2)
+                drawings.Box.Color = roleColor
+                drawings.Box.Visible = true
+                
+                -- ข้อความชื่อบทบาท
+                drawings.Text.Position = Vector2.new(pos.X, pos.Y - drawings.Box.Size.Y / 2 - 18)
+                drawings.Text.Text = player.DisplayName .. " [" .. roleName .. "]"
+                drawings.Text.Color = roleColor
+                drawings.Text.Visible = true
+            else
+                drawings.Box.Visible = false
+                drawings.Text.Visible = false
+            end
+        else
+            drawings.Box.Visible = false
+            drawings.Text.Visible = false
+        end
+    end
+end)
+
+-- ฟังก์ชันค้นหาเป้าหมายที่ใกล้ที่สุดสำหรับระบบล็อคเป้า
+local function GetClosestTarget()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.Humanoid.Health > 0 then
+            local screenPos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+            if onScreen then
+                local mousePos = game:GetService("UserInputService"):GetMouseLocation()
+                local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = player
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- ระบบ Silent Aim / Lock-On สำหรับการยิงและการฟัน
+RunService.RenderStepped:Connect(function()
+    if LockTargetEnabled then
+        local target = GetClosestTarget()
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            -- หันกล้องไปทางเป้าหมายเมื่อถือมีดหรือปืน
+            local character = LocalPlayer.Character
+            if character and (character:FindFirstChild("Gun") or character:FindFirstChild("Knife")) then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.HumanoidRootPart.Position)
+            end
+        end
+    end
+end)
+
+-- --- หน้าเมนู Rayfield UI ---
+
+-- แท็บหลัก
+local MainTab = Window:CreateTab("ฟังก์ชันหลัก 🎯", 4483362458)
+
+-- สวิตช์เปิด/ปิด ล็อคเป้า (มีด & ปืน)
+MainTab:CreateToggle({
+   Name = "ระบบล็อคเป้าอัตโนมัติ (ยิงปืน / ฟันมีด)",
+   CurrentValue = false,
+   Flag = "LockToggle",
+   Callback = function(Value)
+      LockTargetEnabled = Value
+   end,
+})
+
+-- สวิตช์เปิด/ปิด ESP มองทะลุแบ่งสีและบทบาท
+MainTab:CreateToggle({
+   Name = "มองทะลุแสดงบทบาท (ESP)",
+   CurrentValue = false,
+   Flag = "ESPToggle",
+   Callback = function(Value)
+      ESPEnabled = Value
+   end,
+})
+
+-- ปุ่มวาร์ปทุกคนมาหาเรา
+MainTab:CreateButton({
+   Name = "ดึงทุกคนมาหาเรา (ครั้งเดียว)",
+   Callback = function()
+      if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+         local myPos = LocalPlayer.Character.HumanoidRootPart.CFrame
+         for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+               player.Character.HumanoidRootPart.CFrame = myPos * CFrame.new(0, 0, -3)
+            end
+         end
+      end
+   end,
+})
+
+-- สวิตช์ดึงทุกคนมาหาตลอดเวลา
+MainTab:CreateToggle({
+   Name = "ดึงทุกคนมาหาเรื่อยๆ (Bring All Loop)",
+   CurrentValue = false,
+   Flag = "BringLoopToggle",
+   Callback = function(Value)
+      BringPlayersLoop = Value
+      task.spawn(function()
+         while BringPlayersLoop do
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+               local myPos = LocalPlayer.Character.HumanoidRootPart.CFrame
+               for _, player in pairs(Players:GetPlayers()) do
+                  if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                     player.Character.HumanoidRootPart.CFrame = myPos * CFrame.new(0, 0, -3)
+                  end
+               end
+            end
+            task.wait(0.1)
+         end
+      end)
+   end,
+})
+
+Rayfield:Notify({
+   Title = "สคริปต์ทำงานแล้ว!",
+   Content = "โหลดเมนูภาษาไทยเรียบร้อยแล้ว",
+   Duration = 5,
+   Image = 4483362458,
+})
